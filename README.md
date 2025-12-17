@@ -1,71 +1,116 @@
 # cache-redis-config
 
-## Description
-A Python package for generating Redis configuration files at runtime, providing a convenient way to manage and optimize Redis instance settings.
+import configparser
+import os
+import shutil
+import json
+import logging
 
-## Overview
-`cache-redis-config` is a Python library designed to handle Redis configuration file generation and management. It simplifies the process of creating and optimizing Redis configuration files, reducing the need for manual editing and potential errors.
+from typing import Dict
 
-## Features
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-### Key Features
+class RedisConfigGenerator:
+    def __init__(self, **kwargs):
+        """
+        Initialize the RedisConfigGenerator with customizable options.
 
-* **Automatic Configuration Generation**: Automatically generate Redis configuration files with customizable options.
-* **Flexible Configuration Options**: Easily customize Redis settings, including but not limited to, port, host, max clients, and TTL.
-* **Environment Variable Support**: Utilize environment variables to store sensitive configuration details.
-* **File Backup and Versioning**: Create backups of generated configuration files and maintain version history.
+        :param host: Redis host (default: 'localhost')
+        :param port: Redis port (default: 6379)
+        :param max_clients: Maximum number of clients (default: 1000)
+        :param ttl: Time to live (in seconds) (default: 3600)
+        :param env_vars: Dictionary of environment variables (default: {})
+        """
+        self.config = configparser.ConfigParser()
+        self.config['redis'] = {
+            'host': kwargs.get('host', 'localhost'),
+            'port': kwargs.get('port', 6379),
+            'maxclients': kwargs.get('max_clients', 1000),
+            'ttl': kwargs.get('ttl', 3600)
+        }
+        self.env_vars = kwargs.get('env_vars', {})
 
-## Technologies Used
-* **Python 3.7+**: Ensures compatibility with the latest Python versions.
-* **ConfigParser**: Used for handling configuration file generation and management.
-* **Terraform**: Utilized for file backup and versioning.
+    def _load_env_vars(self):
+        """
+        Load environment variables from the system.
 
-## Installation
-To install `cache-redis-config`, use pip:
+        :return: Dictionary of environment variables
+        """
+        env_vars = {}
+        for var, value in os.environ.items():
+            if var.startswith('REDIS_'):
+                env_vars[var.upper()] = value
+        return env_vars
 
-```bash
-pip install cache-redis-config
-```
+    def generate_config(self, filename: str) -> str:
+        """
+        Generate a Redis configuration file.
 
-## Usage
-### Basic Usage
+        :param filename: Path to the configuration file
+        :return: Path to the generated configuration file
+        """
+        # Load environment variables
+        env_vars = self._load_env_vars()
+        env_vars.update(self.env_vars)
 
-```python
-from cache_redis_config import RedisConfigGenerator
+        # Update configuration with environment variables
+        for key, value in env_vars.items():
+            self.config.set('redis', key, value)
 
-config = RedisConfigGenerator(
-    host='localhost',
-    port=6379,
-    max_clients=1000,
-    ttl=3600
-)
+        # Write configuration to file
+        with open(filename, 'w') as config_file:
+            self.config.write(config_file)
 
-config.generate_config('redis.conf')
-```
+        logger.info(f'Generated Redis configuration file: {filename}')
+        return filename
 
-### Custom Usage
+    def backup_config(self, filename: str) -> None:
+        """
+        Create a backup of the configuration file.
 
-```python
-from cache_redis_config import RedisConfigGenerator
+        :param filename: Path to the configuration file
+        """
+        # Create backup directory if it doesn't exist
+        backup_dir = 'config_backups'
+        if not os.path.exists(backup_dir):
+            os.makedirs(backup_dir)
 
-config = RedisConfigGenerator(
-    host='{REDIS_HOST}',
-    port='{REDIS_PORT}',
-    max_clients='{MAX_CLIENTS}',
-    ttl='{TTL}'
-)
+        # Create backup file
+        timestamp = int(json.dumps({'timestamp': os.times()[4]}))
+        backup_filename = f'{filename}.backup.{timestamp}'
+        shutil.copyfile(filename, backup_filename)
 
-config.generate_config('redis.conf')
-```
+        logger.info(f'Created backup of Redis configuration file: {backup_filename}')
 
-## Contributing
-Contributions are welcome and encouraged. Please see the [Contributing Guidelines](CONTRIBUTING.md) for more information.
+    def version_config(self, filename: str) -> None:
+        """
+        Create a version history of the configuration file.
 
-## License
-`cache-redis-config` is released under the [MIT License](LICENSE).
+        :param filename: Path to the configuration file
+        """
+        # Create version directory if it doesn't exist
+        version_dir = 'config_versions'
+        if not os.path.exists(version_dir):
+            os.makedirs(version_dir)
 
-## Documentation
-For more information on using `cache-redis-config`, please refer to the [API Documentation](docs/api.md).
+        # Create version file
+        timestamp = int(json.dumps({'timestamp': os.times()[4]}))
+        version_filename = f'{filename}.version.{timestamp}'
+        shutil.copyfile(filename, version_filename)
 
-## Changelog
-For a detailed list of changes, please refer to the [Changelog](docs/changelog.md).
+        logger.info(f'Created version of Redis configuration file: {version_filename}')
+
+# Example usage
+if __name__ == '__main__':
+    config = RedisConfigGenerator(
+        host='localhost',
+        port=6379,
+        max_clients=1000,
+        ttl=3600
+    )
+
+    config.generate_config('redis.conf')
+    config.backup_config('redis.conf')
+    config.version_config('redis.conf')
